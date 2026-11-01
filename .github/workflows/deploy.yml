@@ -47,18 +47,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      # A previous legacy Pages deployment is stuck in "in progress".
-      # Cancel that stale deployment before creating the new Actions deployment.
-      - name: Clear stale GitHub Pages deployment
+      - name: Clear stale GitHub Pages deployment if still active
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl --fail-with-body --silent --show-error \
+          response=$(curl --silent --show-error --write-out "\n%{http_code}" \
             --request POST \
             --header "Accept: application/vnd.github+json" \
             --header "Authorization: Bearer ${GH_TOKEN}" \
             --header "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages/deployments/125678cbe9b9103a18ca24e25fb1a9204089ce11/cancel"
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages/deployments/125678cbe9b9103a18ca24e25fb1a9204089ce11/cancel")
+          status="${response##*$'\n'}"
+          body="${response%$'\n'*}"
+          if [ "$status" = "204" ] || { [ "$status" = "400" ] && echo "$body" | grep -qi "it's finished"; }; then
+            echo "No active stale deployment remains."
+          else
+            echo "Unable to clear stale deployment (HTTP $status): $body"
+            exit 1
+          fi
 
       - name: Deploy to GitHub Pages
         id: deployment
